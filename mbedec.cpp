@@ -25,12 +25,6 @@
 #include "mbelib_parms.h"
 #include "Golay24128.h"
 
-const int MBEDecoder::dvsi_interleave[49] = {
-		0, 3, 6,  9, 12, 15, 18, 21, 24, 27, 30, 33, 36, 39, 41, 43, 45, 47,
-		1, 4, 7, 10, 13, 16, 19, 22, 25, 28, 31, 34, 37, 40, 42, 44, 46, 48,
-		2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38
-};
-
 const int MBEDecoder::dW[72] = {0,0,3,2,1,1,0,0,1,1,0,0,3,2,1,1,3,2,1,1,0,0,3,2,0,0,3,2,1,1,0,0,1,1,0,0,
                                 3,2,1,1,3,2,1,1,0,0,3,2,0,0,3,2,1,1,0,0,1,1,0,0,3,2,1,1,3,3,2,1,0,0,3,3,};
 
@@ -92,9 +86,8 @@ MBEDecoder::MBEDecoder() :
     m_audio_out_idx = 0;
     m_audio_out_idx2 = 0;
 
-	m_aout_gain = 25;
-    m_volume = 1.0f;
-	m_hwrx = false;
+	m_aout_gain = 100;
+	m_volume = 1.0f;
 	m_auto_gain = false;
     m_stereo = false;
     m_channels = 3; // both channels by default if stereo is set
@@ -117,7 +110,7 @@ void MBEDecoder::initMbeParms()
 	m_err_str[0] = 0;
 
     if (m_auto_gain){
-        m_aout_gain = 25;
+		m_aout_gain = 100;
     }
 }
 
@@ -178,16 +171,7 @@ void MBEDecoder::process_nxdn(unsigned char *d)
 		}
 	}
 	ambe_data[48] = (1 & (d[6] >> 7));
-	if(m_hwrx){
-		for(int i = 0, j; i < 49; ++i){
-			j = dvsi_interleave[i];
-			dvsi_data[j/8] += (ambe_data[i])<<(7-(j%8));
-		}
-		memcpy(d, dvsi_data, 7);
-	}
-	else{
-		processData(ambe_data, NULL);
-	}
+	processData(ambe_data);
 }
 
 void MBEDecoder::process_p25(unsigned char *d)
@@ -293,25 +277,10 @@ void MBEDecoder::process_frame(char ambe_fr[4][24])
 	processAudio();
 }
 
-void MBEDecoder::processData(char ambe_data[49], unsigned char ambe_frame[9])
+void MBEDecoder::processData(char ambe_data[49])
 {
-	if(m_hwrx){
-
-		//char d[9];
-		//ambe49to72(ambe_data, d);
-		//fprintf(stderr, "MBEDecoder: ");
-		for(int i = 0; i < 9; ++i){
-			ambe72.push(ambe_frame[i]);
-			//fprintf(stderr, "%02x ", (unsigned char)ambe_frame[i]);
-		}
-		//fprintf(stderr, "\n");
-		//fflush(stderr);
-		//std::cerr << "ambe72 size == " << ambe72.size() << std::endl;
-	}
-	else{
-		mbe_processAmbe2450Dataf(m_audio_out_temp_buf, &m_errs,&m_errs2, m_err_str, ambe_data, m_mbelibParms->m_cur_mp,m_mbelibParms->m_prev_mp, m_mbelibParms->m_prev_mp_enhanced, 3);
-		processAudio();
-	}
+	mbe_processAmbe2450Dataf(m_audio_out_temp_buf, &m_errs,&m_errs2, m_err_str, ambe_data, m_mbelibParms->m_cur_mp,m_mbelibParms->m_prev_mp, m_mbelibParms->m_prev_mp_enhanced, 3);
+	processAudio();
 }
 
 void MBEDecoder::processData4400(char imbe_data[88])
@@ -409,14 +378,15 @@ void MBEDecoder::processAudio()
     m_audio_out_float_buf_p = m_audio_out_float_buf;
 
     for (n = 0; n < 160; n++){
-       if (*m_audio_out_temp_buf_p > static_cast<float>(32760)){
+		*m_audio_out_temp_buf_p *= m_volume;
+	   if (*m_audio_out_temp_buf_p > static_cast<float>(32760)){
             *m_audio_out_temp_buf_p = static_cast<float>(32760);
         }
-        else if (*m_audio_out_temp_buf_p < static_cast<float>(-32760)){
+		else if (*m_audio_out_temp_buf_p < static_cast<float>(-32760)){
             *m_audio_out_temp_buf_p = static_cast<float>(-32760);
         }
 
-        *m_audio_out_buf_p = static_cast<short>(*m_audio_out_temp_buf_p);
+		*m_audio_out_buf_p = static_cast<short>(*m_audio_out_temp_buf_p);
         m_audio_out_buf_p++;
 
         if (m_stereo){

@@ -38,6 +38,7 @@ public:
 
 signals:
 	void update();
+	void update_output_level(unsigned short);
 private slots:
 	void start_tx();
 	void stop_tx();
@@ -53,6 +54,8 @@ private slots:
 	void rate_changed(int r) { m_txrate = r; }
 	void in_audio_vol_changed(qreal);
 	void out_audio_vol_changed(qreal);
+	void decoder_gain_changed(qreal);
+	void process_rx_data();
 private:
 
 	enum{
@@ -80,7 +83,6 @@ private:
 	cst_voice *voice_slt;
 	cst_voice *voice_kal;
 	cst_voice *voice_awb;
-	cst_voice *voice_rms;
 	cst_wave *tts_audio;
 #endif
 	QString m_src;
@@ -91,10 +93,13 @@ private:
 	QQueue<unsigned char> m_codecq;
 	QTimer *m_ping_timer;
 	QTimer *m_txtimer;
+	QTimer *m_rxtimer;
 	AudioEngine *m_audio;
 	QString m_audioin;
 	QString m_audioout;
 	int m_txrate;
+	uint32_t m_rxcnt;
+	QQueue<uint8_t> m_rxcodecq;
 };
 
 #endif // M17CODEC_H

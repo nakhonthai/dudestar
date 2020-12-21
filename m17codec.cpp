@@ -10,7 +10,6 @@ extern "C" {
 extern cst_voice * register_cmu_us_slt(const char *);
 extern cst_voice * register_cmu_us_kal16(const char *);
 extern cst_voice * register_cmu_us_awb(const char *);
-extern cst_voice * register_cmu_us_rms(const char *);
 }
 #endif
 
@@ -27,14 +26,14 @@ M17Codec::M17Codec(QString callsign, char module, QString hostname, QString host
 	m_streamid(0),
 	m_audioin(audioin),
 	m_audioout(audioout),
-	m_txrate(1)
+	m_txrate(1),
+	m_rxcnt(0)
 {
 #ifdef USE_FLITE
 	flite_init();
 	voice_slt = register_cmu_us_slt(nullptr);
 	voice_kal = register_cmu_us_kal16(nullptr);
 	voice_awb = register_cmu_us_awb(nullptr);
-	voice_rms = register_cmu_us_rms(nullptr);
 #endif
 
 }
@@ -49,6 +48,10 @@ void M17Codec::in_audio_vol_changed(qreal v){
 
 void M17Codec::out_audio_vol_changed(qreal v){
 	m_audio->set_output_volume(v);
+}
+
+void M17Codec::decoder_gain_changed(qreal v){
+	m_c2->set_decode_gain(v);
 }
 
 void M17Codec::encode_callsign(uint8_t *callsign)
@@ -131,6 +134,8 @@ void M17Codec::process_udp()
 			m_c2 = new CCodec2(true);
 			m_txtimer = new QTimer();
 			connect(m_txtimer, SIGNAL(timeout()), this, SLOT(transmit()));
+			m_rxtimer = new QTimer();
+			connect(m_rxtimer, SIGNAL(timeout()), this, SLOT(process_rx_data()));
 			m_ping_timer = new QTimer();
 			connect(m_ping_timer, SIGNAL(timeout()), this, SLOT(send_ping()));
 			m_ping_timer->start(8000);
@@ -143,7 +148,6 @@ void M17Codec::process_udp()
 	}
 	if((buf.size() == 54) && (::memcmp(buf.data(), "M17 ", 4U) == 0)){
 		uint8_t cs[10];
-		uint8_t sz;
 		::memcpy(cs, &(buf.data()[12]), 6);
 		decode_callsign(cs);
 		m_src = QString((char *)cs);
@@ -153,23 +157,28 @@ void M17Codec::process_udp()
 		if((buf.data()[19] & 0x06U) == 0x04U){
 			m_type = "3200 Voice";
 			set_mode(true);
-			sz = 16;
 		}
 		else{
 			m_type = "1600 V/D";
 			set_mode(false);
-			sz = 8;
 		}
 		m_streamid = (buf.data()[4] << 8) | (buf.data()[5] & 0xff);
 		m_fn = (buf.data()[34] << 8) | (buf.data()[35] & 0xff);
-
-		int16_t pcm[320];
-		m_c2->codec2_decode(pcm, (uint8_t *)&buf.data()[36]);
-
-		if(get_mode()){
-			m_c2->codec2_decode(&pcm[160], (uint8_t *)&buf.data()[44]);
+		if(!m_tx && (m_rxcnt++ == 0)){
+			m_rxtimer->start(19);
 		}
-		m_audio->write(pcm, 320);
+		if(m_fn & 0x8000){ // EOT
+			m_rxtimer->stop();
+			m_rxcnt = 0;
+		}
+
+		int s = 8;
+		if(get_mode()){
+			s = 16;
+		}
+		for(int i = 0; i < s; ++i){
+			m_rxcodecq.append((uint8_t )buf.data()[36+i]);
+		}
 	}
 	emit update();
 }
@@ -267,6 +276,8 @@ void M17Codec::start_tx()
 	qDebug() << "start_tx() " << m_ttsid << " " << m_ttstext;
 	m_tx = true;
 	m_txcnt = 0;
+	m_rxtimer->stop();
+	m_rxcnt = 0;
 	m_c2->codec2_set_mode(m_txrate);
 #ifdef USE_FLITE
 
@@ -274,12 +285,9 @@ void M17Codec::start_tx()
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_kal);
 	}
 	else if(m_ttsid == 2){
-		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_rms);
-	}
-	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_awb);
 	}
-	else if(m_ttsid == 4){
+	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_slt);
 	}
 #endif
@@ -293,7 +301,11 @@ void M17Codec::start_tx()
 			m_audio->start_capture();
 			//audioin->start(&audio_buffer);
 		}
-		m_txtimer->start(30);
+#ifdef Q_OS_WIN
+		m_txtimer->start(30); // Qt timers on windows seem to be slower than desired value
+#else
+		m_txtimer->start(36);
+#endif
 	}
 }
 
@@ -308,10 +320,10 @@ void M17Codec::transmit()
 	QByteArray txframe;
 	static uint16_t txstreamid = 0;
 	static uint16_t tx_cnt = 0;
-	static uint16_t ttscnt = 0;
 	int16_t pcm[320];
 	uint8_t c2[16];
 #ifdef USE_FLITE
+	static uint16_t ttscnt = 0;
 	if(m_ttsid > 0){
 		for(int i = 0; i < 320; ++i){
 			if(ttscnt >= tts_audio->num_samples/2){
@@ -434,7 +446,9 @@ void M17Codec::transmit()
 		m_udp->writeDatagram(txframe, m_address, m_port);
 		txstreamid = 0;
 		tx_cnt = 0;
+#ifdef USE_FLITE
 		ttscnt = 0;
+#endif
 		m_txtimer->stop();
 		if(m_ttsid == 0){
 			m_audio->stop_capture();
@@ -454,9 +468,28 @@ void M17Codec::transmit()
 	}
 }
 
+void M17Codec::process_rx_data()
+{
+	int16_t pcm[320];
+	uint8_t codec2[8];
+
+	if((!m_tx) && (m_rxcodecq.size() > 7) ){
+		for(int i = 0; i < 8; ++i){
+			codec2[i] = m_rxcodecq.dequeue();
+		}
+	}
+	else return;
+
+	m_c2->codec2_decode(pcm, codec2);
+	int s = get_mode() ? 160 : 320;
+	m_audio->write(pcm, s);
+	emit update_output_level(m_audio->level());
+}
+
 void M17Codec::deleteLater()
 {
 	if(m_status == CONNECTED_RW){
+		m_udp->disconnect();
 		m_ping_timer->stop();
 		send_disconnect();
 		delete m_audio;

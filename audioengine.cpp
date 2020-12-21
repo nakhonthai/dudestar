@@ -1,9 +1,17 @@
 #include "audioengine.h"
 #include <QDebug>
+
+#ifdef Q_OS_MACOS
+#define MACHAK 1
+#else
+#define MACHAK 0
+#endif
+
 //AudioEngine::AudioEngine(QObject *parent) : QObject(parent)
 AudioEngine::AudioEngine(QString in, QString out) :
 	m_outputdevice(out),
-	m_inputdevice(in)
+    m_inputdevice(in),
+    m_srm(1)
 {
 
 }
@@ -50,7 +58,15 @@ void AudioEngine::init()
 	else{
 		QAudioDeviceInfo info(QAudioDeviceInfo::defaultOutputDevice());
 		for (QList<QAudioDeviceInfo>::ConstIterator it = devices.constBegin(); it != devices.constEnd(); ++it ) {
-			//qDebug() << "Device name = " << (*it).deviceName();
+            if(MACHAK){
+                qDebug() << "Playback device name = " << (*it).deviceName();
+                qDebug() << (*it).supportedByteOrders();
+                qDebug() << (*it).supportedChannelCounts();
+                qDebug() << (*it).supportedCodecs();
+                qDebug() << (*it).supportedSampleRates();
+                qDebug() << (*it).supportedSampleSizes();
+                qDebug() << (*it).supportedSampleTypes();
+            }
 			if((*it).deviceName() == m_outputdevice){
 				info = *it;
 			}
@@ -63,10 +79,10 @@ void AudioEngine::init()
 		else{
 			tempformat = format;
 		}
-		//fprintf(stderr, "Using playback device %s\n", info.deviceName().toStdString().c_str());fflush(stderr);
+        fprintf(stderr, "Using playback device %s\n", info.deviceName().toStdString().c_str());fflush(stderr);
 
 		m_out = new QAudioOutput(info, tempformat, this);
-		m_out->setBufferSize(6400);
+		m_out->setBufferSize(1600);
 		m_outdev = m_out->start();
 	}
 
@@ -78,7 +94,15 @@ void AudioEngine::init()
 	else{
 		QAudioDeviceInfo info(QAudioDeviceInfo::defaultInputDevice());
 		for (QList<QAudioDeviceInfo>::ConstIterator it = devices.constBegin(); it != devices.constEnd(); ++it ) {
-			//qDebug() << "Device name = " << (*it).deviceName();
+            if(MACHAK){
+                qDebug() << "Capture device name = " << (*it).deviceName();
+                qDebug() << (*it).supportedByteOrders();
+                qDebug() << (*it).supportedChannelCounts();
+                qDebug() << (*it).supportedCodecs();
+                qDebug() << (*it).supportedSampleRates();
+                qDebug() << (*it).supportedSampleSizes();
+                qDebug() << (*it).supportedSampleTypes();
+            }
 			if((*it).deviceName() == m_inputdevice){
 				info = *it;
 			}
@@ -91,7 +115,20 @@ void AudioEngine::init()
 		else{
 			tempformat = format;
 		}
-		//fprintf(stderr, "Using recording device %s\n", info.deviceName().toStdString().c_str());fflush(stderr);
+        fprintf(stderr, "Using recording device %s\n", info.deviceName().toStdString().c_str());fflush(stderr);
+        int sr = 8000;
+        if(MACHAK){
+			if( (info.deviceName() == "Built-in Microphone") ||
+				(info.deviceName() == "MacBook Pro Microphone") ){
+                sr = 44100;
+                m_srm = 5;
+            }
+            else{
+                sr = 48000;
+                m_srm = 6;
+            }
+        }
+        format.setSampleRate(sr);
 		m_in = new QAudioInput(info, format, this);
 	}
 }
@@ -137,7 +174,7 @@ void AudioEngine::input_data_received()
 		fprintf(stderr, "\n");
 		fflush(stderr);
 */
-		for(int i = 0; i < len; i+=2){
+        for(int i = 0; i < len; i += (2 * m_srm)){
 			m_audioinq.enqueue(((data.data()[i+1] << 8) & 0xff00) | (data.data()[i] & 0xff));
 		}
 	}
@@ -145,10 +182,16 @@ void AudioEngine::input_data_received()
 
 void AudioEngine::write(int16_t *pcm, size_t s)
 {
+	m_maxlevel = 0;
 	m_outdev->write((const char *) pcm, sizeof(int16_t) * s);
+	for(uint32_t i = 0; i < s; ++i){
+		if(pcm[i] > m_maxlevel){
+			m_maxlevel = pcm[i];
+		}
+	}
 }
 
-uint16_t AudioEngine::read(int16_t *pcm, size_t s)
+uint16_t AudioEngine::read(int16_t *pcm, int s)
 {
 	if(m_audioinq.size() >= s){
 		for(int i = 0; i < s; ++i){

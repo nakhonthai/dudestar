@@ -26,7 +26,6 @@ extern "C" {
 extern cst_voice * register_cmu_us_slt(const char *);
 extern cst_voice * register_cmu_us_kal16(const char *);
 extern cst_voice * register_cmu_us_awb(const char *);
-extern cst_voice * register_cmu_us_rms(const char *);
 }
 #endif
 
@@ -51,7 +50,6 @@ REFCodec::REFCodec(QString callsign, QString hostname, QString host, int port, Q
 	voice_slt = register_cmu_us_slt(nullptr);
 	voice_kal = register_cmu_us_kal16(nullptr);
 	voice_awb = register_cmu_us_awb(nullptr);
-	voice_rms = register_cmu_us_rms(nullptr);
 #endif
 }
 
@@ -65,6 +63,14 @@ void REFCodec::in_audio_vol_changed(qreal v){
 
 void REFCodec::out_audio_vol_changed(qreal v){
 	m_audio->set_output_volume(v);
+}
+
+void REFCodec::decoder_gain_changed(qreal v)
+{
+	if(m_hwrx){
+		m_ambedev->set_decode_gain(v);
+	}
+	m_mbedec->setVolume(v);
 }
 
 void REFCodec::process_udp()
@@ -119,7 +125,7 @@ void REFCodec::process_udp()
 	if((m_status == CONNECTING) && (buf.size() == 0x08)){
 		if((memcmp(&buf.data()[4], "OKRW", 4) == 0) || (memcmp(&buf.data()[4], "OKRO", 4) == 0) || (memcmp(&buf.data()[4], "BUSY", 4) == 0)){
 			m_mbedec = new MBEDecoder();
-			m_mbedec->setAutoGain(true);
+			//m_mbedec->setAutoGain(true);
 			m_mbeenc = new MBEEncoder();
 			m_mbeenc->set_dstar_mode();
 			m_mbeenc->set_gain_adjust(3);
@@ -167,19 +173,23 @@ void REFCodec::process_udp()
 	if((buf.size() == 0x3a) && (!memcmp(buf.data()+1, header, 5)) ){
 		char temp[9];
 		memcpy(temp, buf.data() + 20, 8); temp[8] = '\0';
-		m_rptr2 = QString(temp);
+		QString rptr2 = QString(temp);
 		memcpy(temp, buf.data() + 28, 8); temp[8] = '\0';
-		m_rptr1 = QString(temp);
+		QString rptr1 = QString(temp);
 		memcpy(temp, buf.data() + 36, 8); temp[8] = '\0';
-		m_urcall = QString(temp);
+		QString urcall = QString(temp);
 		memcpy(temp, buf.data() + 44, 8); temp[8] = '\0';
-		m_mycall = QString(temp);
+		QString mycall = QString(temp);
 		QString h = m_hostname + " " + m_module;
 		//qDebug() << "h:r1:r2 == " << h.simplified() << ":" << m_rptr1.simplified() << ":" << m_rptr2.simplified();
-		if( (m_rptr2.simplified() == h.simplified()) || (m_rptr1.simplified() == h.simplified()) ){
+		if( (rptr2.simplified() == h.simplified()) || (rptr1.simplified() == h.simplified()) ){
 			if(m_hwrx && !m_tx && (m_streamid == 0)){
 				m_hwrxtimer->start(19);
 			}
+			m_mycall = mycall;
+			m_urcall = urcall;
+			m_rptr1 = rptr1;
+			m_rptr2 = rptr2;
 			m_streamid = (buf.data()[14] << 8) | (buf.data()[15] & 0xff);
 		}
 		else{
@@ -253,6 +263,7 @@ void REFCodec::process_udp()
 			audioSamples = m_mbedec->getAudio(nbAudioSamples);
 			m_audio->write(audioSamples, nbAudioSamples);
 			m_mbedec->resetAudio();
+			emit update_output_level(m_audio->level());
 		}
 
 		//for(int i = 0; i < 9; ++i){
@@ -340,6 +351,24 @@ void REFCodec::send_disconnect()
 #endif
 }
 
+void REFCodec::format_callsign(QString &s)
+{
+	QStringList l = s.simplified().split(' ');
+
+	if(l.size() > 1){
+		s = l.at(0).simplified();
+		while(s.size() < 7){
+			s.append(' ');
+		}
+		s += l.at(1).simplified();
+	}
+	else{
+		while(s.size() < 8){
+			s.append(' ');
+		}
+	}
+}
+
 void REFCodec::start_tx()
 {
 	//std::cerr << "Pressed TX buffersize == " << audioin->bufferSize() << std::endl;
@@ -355,17 +384,18 @@ void REFCodec::start_tx()
 	m_streamid = 0;
 	m_txcnt = 0;
 	m_ttscnt = 0;
+	format_callsign(m_txmycall);
+	format_callsign(m_txurcall);
+	format_callsign(m_txrptr1);
+	format_callsign(m_txrptr2);
 #ifdef USE_FLITE
 	if(m_ttsid == 1){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_kal);
 	}
 	else if(m_ttsid == 2){
-		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_rms);
-	}
-	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_awb);
 	}
-	else if(m_ttsid == 4){
+	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_slt);
 	}
 #endif
@@ -617,6 +647,7 @@ void REFCodec::receive_hwrx_data()
 
 	if(m_ambedev->get_audio(audio)){
 		m_audio->write(audio, 160);
+		emit update_output_level(m_audio->level());
 	}
 }
 

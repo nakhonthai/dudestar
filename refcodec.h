@@ -51,6 +51,7 @@ public:
 	bool get_hwtx() { return m_hwtx; }
 signals:
 	void update();
+	void update_output_level(unsigned short);
 private:
 	bool m_tx;
 	uint16_t m_txcnt;
@@ -60,7 +61,6 @@ private:
 	cst_voice *voice_slt;
 	cst_voice *voice_kal;
 	cst_voice *voice_awb;
-	cst_voice *voice_rms;
 	cst_wave *tts_audio;
 #endif
 	enum{
@@ -121,6 +121,7 @@ private slots:
 	void send_disconnect();
 
 	void transmit();
+	void format_callsign(QString &s);
 	void hostname_lookup(QHostInfo i);
 	void input_src_changed(int id, QString t) { m_ttsid = id; m_ttstext = t; }
 	void module_changed(int m) { m_module = 0x41 + m; m_streamid = 0; }
@@ -133,6 +134,7 @@ private slots:
 	void send_frame(uint8_t *);
 	void in_audio_vol_changed(qreal);
 	void out_audio_vol_changed(qreal);
+	void decoder_gain_changed(qreal);
 	void calcPFCS(char *d);
 };
 

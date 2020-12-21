@@ -33,7 +33,6 @@ extern "C" {
 extern cst_voice * register_cmu_us_slt(const char *);
 extern cst_voice * register_cmu_us_kal16(const char *);
 extern cst_voice * register_cmu_us_awb(const char *);
-extern cst_voice * register_cmu_us_rms(const char *);
 }
 #endif
 
@@ -64,7 +63,7 @@ private slots:
 	void stop_tx();
 	void deleteLater();
 	void process_udp();
-	void process_hwrx_data();
+	void process_rx_data();
 	void get_ambe();
 	void send_ping();
 	void send_connect();
@@ -79,6 +78,7 @@ private slots:
 	void send_frame();
 	void in_audio_vol_changed(qreal);
 	void out_audio_vol_changed(qreal);
+	void decoder_gain_changed(qreal);
 private:
 	enum{
 		DISCONNECTED,
@@ -119,7 +119,7 @@ private:
 	MBEEncoder *m_mbeenc;
 	QString m_vocoder;
 	SerialAMBE *m_ambedev;
-	QTimer *m_hwrxtimer;
+	QTimer *m_rxtimer;
 	bool m_hwrx;
 	bool m_hwtx;
 	uint8_t packet_size;
@@ -133,7 +133,6 @@ private:
 	cst_voice *voice_slt;
 	cst_voice *voice_kal;
 	cst_voice *voice_awb;
-	cst_voice *voice_rms;
 	cst_wave *tts_audio;
 #endif
 	void encode_header();

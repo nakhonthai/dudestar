@@ -25,6 +25,7 @@
 #include <flite/flite.h>
 #endif
 #include "httpmanager.h"
+#include "levelmeter.h"
 #include "mbedec.h"
 #include "mbeenc.h"
 #include "refcodec.h"
@@ -54,9 +55,13 @@ signals:
 	void rate_changed(int);
 	void out_audio_vol_changed(qreal);
 	void in_audio_vol_changed(qreal);
+	void codec_gain_changed(qreal);
 private:
     void init_gui();
     Ui::DudeStar *ui;
+	LevelMeter *m_levelmeter;
+	QLabel *m_labeldb;
+	QTimer *m_uitimer;
 	QButtonGroup *m17rates;
 
 	enum{
@@ -94,10 +99,10 @@ private:
 	uint32_t dmrid;
 	uint32_t dmr_srcid;
 	uint32_t dmr_destid;
-	uint32_t dmrcc;
-	uint32_t dmrslot;
-	uint8_t dmrcalltype;
-	QString protocol;
+	uint32_t m_dmrcc;
+	uint32_t m_dmrslot;
+	uint8_t m_dmrcalltype;
+	QString m_protocol;
 	uint64_t ping_cnt;
 	QThread *m_modethread;
 	REFCodec *m_ref;
@@ -119,8 +124,9 @@ private:
 	QMap<uint16_t, QString> nxdnids;
     const unsigned char header[5] = {0x80,0x44,0x53,0x56,0x54}; //DVSI packet header
 	QButtonGroup *tts_voices;
+	uint16_t m_outlevel;
+	uint64_t m_rxcnt;
 private slots:
-    void about();
     void process_connect();
 	void process_mode_change(const QString &m);
 	void process_host_change(const QString &);
@@ -140,10 +146,11 @@ private slots:
 	void update_m17_data();
 	void m17_rate_changed(int);
 	void handleStateChanged(QAudio::State);
+	void process_codecgain_changed(int);
 	void process_mute_button();
 	void process_volume_changed(int);
-	void process_input_volume_changed(int);
-	void process_input_mute_button();
+	void process_mic_gain_changed(int);
+	void process_mic_mute_button();
 	void process_ref_hosts();
 	void process_dcs_hosts();
 	void process_xrf_hosts();
@@ -162,6 +169,8 @@ private slots:
     void process_settings();
 	void download_file(QString);
 	void file_downloaded(QString);
+	void update_ui();
+	void update_output_level(unsigned short l){ m_outlevel = l;}
 };
 
 #endif // DUDESTAR_H

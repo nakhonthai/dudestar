@@ -26,7 +26,6 @@ extern "C" {
 extern cst_voice * register_cmu_us_slt(const char *);
 extern cst_voice * register_cmu_us_kal16(const char *);
 extern cst_voice * register_cmu_us_awb(const char *);
-extern cst_voice * register_cmu_us_rms(const char *);
 }
 #endif
 
@@ -50,7 +49,6 @@ XRFCodec::XRFCodec(QString callsign, QString hostname, QString host, int port, Q
 	voice_slt = register_cmu_us_slt(nullptr);
 	voice_kal = register_cmu_us_kal16(nullptr);
 	voice_awb = register_cmu_us_awb(nullptr);
-	voice_rms = register_cmu_us_rms(nullptr);
 #endif
 }
 
@@ -66,6 +64,14 @@ void XRFCodec::out_audio_vol_changed(qreal v){
 	m_audio->set_output_volume(v);
 }
 
+void XRFCodec::decoder_gain_changed(qreal v)
+{
+	if(m_hwrx){
+		m_ambedev->set_decode_gain(v);
+	}
+	m_mbedec->setVolume(v);
+}
+
 void XRFCodec::process_udp()
 {
 	QByteArray buf;
@@ -73,11 +79,9 @@ void XRFCodec::process_udp()
 	quint16 senderPort;
 	int nbAudioSamples = 0;
 	int16_t *audioSamples;
-	static uint16_t s = 0;
 	static bool sd_sync = 0;
 	static int sd_seq = 0;
 	static char user_data[21];
-	const unsigned char header[5] = {0x80,0x44,0x53,0x56,0x54};
 
 	buf.resize(m_udp->pendingDatagramSize());
 	m_udp->readDatagram(buf.data(), buf.size(), &sender, &senderPort);
@@ -97,7 +101,7 @@ void XRFCodec::process_udp()
 	if( (m_status == CONNECTING) && (buf.size() == 14) && (!memcmp(buf.data()+10, "ACK", 3)) ){
 		m_status = CONNECTED_RW;
 		m_mbedec = new MBEDecoder();
-		m_mbedec->setAutoGain(true);
+		//m_mbedec->setAutoGain(true);
 		m_mbeenc = new MBEEncoder();
 		m_mbeenc->set_dstar_mode();
 		m_mbeenc->set_gain_adjust(3);
@@ -297,12 +301,9 @@ void XRFCodec::start_tx()
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_kal);
 	}
 	else if(m_ttsid == 2){
-		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_rms);
-	}
-	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_awb);
 	}
-	else if(m_ttsid == 4){
+	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_slt);
 	}
 #endif

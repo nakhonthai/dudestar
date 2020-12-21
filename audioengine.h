@@ -26,7 +26,8 @@ public:
 	void set_output_volume(qreal);
 	void set_input_volume(qreal);
 	bool frame_available() { return (m_audioinq.size() >= 320) ? true : false; }
-	uint16_t read(int16_t *, size_t);
+	uint16_t read(int16_t *, int);
+	uint16_t level() { return m_maxlevel; }
 signals:
 
 private:
@@ -37,6 +38,8 @@ private:
 	QIODevice *m_outdev;
 	QIODevice *m_indev;
 	QQueue<int16_t> m_audioinq;
+	uint16_t m_maxlevel;
+    uint8_t m_srm; // sample rate multiplier for macOS HACK
 
 private slots:
 	void input_data_received();

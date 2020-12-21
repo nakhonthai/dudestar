@@ -50,7 +50,6 @@ extern "C" {
 extern cst_voice * register_cmu_us_slt(const char *);
 extern cst_voice * register_cmu_us_kal16(const char *);
 extern cst_voice * register_cmu_us_awb(const char *);
-extern cst_voice * register_cmu_us_rms(const char *);
 }
 #endif
 
@@ -75,7 +74,6 @@ P25Codec::P25Codec(QString callsign, int dmrid, int hostname, QString host, int 
 	voice_slt = register_cmu_us_slt(nullptr);
 	voice_kal = register_cmu_us_kal16(nullptr);
 	voice_awb = register_cmu_us_awb(nullptr);
-	voice_rms = register_cmu_us_rms(nullptr);
 #endif
 }
 
@@ -89,6 +87,11 @@ void P25Codec::in_audio_vol_changed(qreal v){
 
 void P25Codec::out_audio_vol_changed(qreal v){
 	m_audio->set_output_volume(v);
+}
+
+void P25Codec::decoder_gain_changed(qreal v)
+{
+	m_mbedec->setVolume(v);
 }
 
 void P25Codec::process_udp()
@@ -111,7 +114,7 @@ void P25Codec::process_udp()
 		if(m_status == CONNECTING){
 			m_status = CONNECTED_RW;
 			m_mbedec = new MBEDecoder();
-			m_mbedec->setAutoGain(true);
+			//m_mbedec->setAutoGain(true);
 			m_mbeenc = new MBEEncoder();
 			m_mbeenc->set_88bit_mode();
 			m_status = CONNECTED_RW;
@@ -134,7 +137,7 @@ void P25Codec::process_udp()
 		}
 		int offset = 0;
 		m_fn = buf.data()[0U];
-		switch (buf.data()[0U]) {
+		switch ((uint8_t)buf.data()[0U]) {
 		case 0x62U:
 			offset = 10U;
 			break;
@@ -269,12 +272,9 @@ void P25Codec::start_tx()
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_kal);
 	}
 	else if(m_ttsid == 2){
-		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_rms);
-	}
-	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_awb);
 	}
-	else if(m_ttsid == 4){
+	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_slt);
 	}
 #endif
@@ -306,9 +306,9 @@ void P25Codec::transmit()
 	int16_t pcm[160];
 	unsigned char buffer[22];
 	static uint8_t p25step = 0;
+#ifdef USE_FLITE
 	static uint16_t ttscnt = 0;
 
-#ifdef USE_FLITE
 	if(m_ttsid > 0){
 		for(int i = 0; i < 160; ++i){
 			if(ttscnt >= tts_audio->num_samples/2){
@@ -467,7 +467,9 @@ void P25Codec::transmit()
 		if(m_ttsid == 0){
 			m_audio->stop_capture();
 		}
+#ifdef USE_FLITE
 		ttscnt = 0;
+#endif
 		p25step = 0;
 		m_srcid = 0;
 		m_dstid = 0;
@@ -498,6 +500,7 @@ void P25Codec::process_rx_data()
 		//fprintf(stderr, "audio sample size == %d\n", nbAudioSamples);
 		m_audio->write(audioSamples, nbAudioSamples);
 		m_mbedec->resetAudio();
+		emit update_output_level(m_audio->level());
 	}
 }
 

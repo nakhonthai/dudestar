@@ -35,7 +35,7 @@ class DMRCodec : public QObject
 {
 	Q_OBJECT
 public:
-	DMRCodec(QString callsign, uint32_t dmrid, QString password, uint32_t dstid, QString host, uint32_t port, QString vocoder, QString audioin, QString audioout);
+	DMRCodec(QString callsign, uint32_t dmrid, uint8_t essid, QString password, QString lat, QString lon, QString location, QString desc, QString options, uint32_t dstid, QString host, uint32_t port, QString vocoder, QString audioin, QString audioout);
 	~DMRCodec();
 	unsigned char * get_eot();
 	uint8_t get_status(){ return m_status; }
@@ -49,12 +49,13 @@ public:
 	uint32_t get_gw() { return m_gwid; }
 	QString get_host() { return m_host; }
 	int get_port() { return m_port; }
-	int get_fn() { return m_fn; }
+	uint8_t get_fn() { return m_fn; }
 	int get_cnt() { return m_cnt; }
 	bool get_hwrx() { return m_hwrx; }
 	bool get_hwtx() { return m_hwtx; }
 signals:
 	void update();
+	void update_output_level(unsigned short);
 private slots:
 	void start_tx();
 	void stop_tx();
@@ -76,6 +77,7 @@ private slots:
 	void send_frame();
 	void in_audio_vol_changed(qreal);
 	void out_audio_vol_changed(qreal);
+	void decoder_gain_changed(qreal);
 private:
 	enum{
 		DISCONNECTED,
@@ -90,7 +92,12 @@ private:
 	QHostAddress m_address;
 	QString m_callsign;
 	uint32_t m_dmrid;
+	uint32_t m_essid;
 	QString m_password;
+	QString m_lat;
+	QString m_lon;
+	QString m_location;
+	QString m_desc;
 	uint32_t m_srcid;
 	uint32_t m_dstid;
 	uint32_t m_txdstid;
@@ -98,7 +105,7 @@ private:
 	QString m_hostname;
 	QString m_host;
 	int m_port;
-	uint16_t m_fn;
+	uint8_t m_fn;
 	bool m_tx;
 	uint16_t m_txcnt;
 	uint32_t m_rxcnt;
@@ -121,7 +128,6 @@ private:
 	cst_voice *voice_slt;
 	cst_voice *voice_kal;
 	cst_voice *voice_awb;
-	cst_voice *voice_rms;
 	cst_wave *tts_audio;
 #endif
 	uint32_t m_defsrcid;
@@ -146,6 +152,7 @@ private:
 	bool m_data[72U];
 	QString m_audioin;
 	QString m_audioout;
+	QString m_options;
 
 	void byteToBitsBE(uint8_t byte, bool* bits);
 	void bitsToByteBE(const bool* bits, uint8_t& byte);
@@ -164,6 +171,7 @@ private:
 	void full_lc_encode(uint8_t* data, uint8_t type);
 	void addDMRDataSync(uint8_t* data, bool duplex);
 	void addDMRAudioSync(uint8_t* data, bool duplex);
+	void setup_connection();
 };
 
 #endif // DMRCODEC_H

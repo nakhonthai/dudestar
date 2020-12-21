@@ -32,14 +32,11 @@ const int dvsi_interleave[49] = {
 		2, 5, 8, 11, 14, 17, 20, 23, 26, 29, 32, 35, 38
 };
 
-const char ysf_radioid[] = {'H', '5', '0', '0', '0'};
-
 #ifdef USE_FLITE
 extern "C" {
 extern cst_voice * register_cmu_us_slt(const char *);
 extern cst_voice * register_cmu_us_kal16(const char *);
 extern cst_voice * register_cmu_us_awb(const char *);
-extern cst_voice * register_cmu_us_rms(const char *);
 }
 #endif
 
@@ -69,7 +66,6 @@ YSFCodec::YSFCodec(QString callsign, QString hostname, QString host, int port, Q
 	voice_slt = register_cmu_us_slt(nullptr);
 	voice_kal = register_cmu_us_kal16(nullptr);
 	voice_awb = register_cmu_us_awb(nullptr);
-	voice_rms = register_cmu_us_rms(nullptr);
 #endif
 }
 
@@ -83,6 +79,14 @@ void YSFCodec::in_audio_vol_changed(qreal v){
 
 void YSFCodec::out_audio_vol_changed(qreal v){
 	m_audio->set_output_volume(v);
+}
+
+void YSFCodec::decoder_gain_changed(qreal v)
+{
+	if(m_hwrx){
+		m_ambedev->set_decode_gain(v);
+	}
+	m_mbedec->setVolume(v);
 }
 
 void YSFCodec::process_udp()
@@ -112,7 +116,7 @@ void YSFCodec::process_udp()
 			connect(m_ping_timer, SIGNAL(timeout()), this, SLOT(send_ping()));
 			set_fcs_mode(false);
 			m_mbedec = new MBEDecoder();
-			m_mbedec->setAutoGain(true);
+			//m_mbedec->setAutoGain(true);
 			m_mbeenc = new MBEEncoder();
 			m_mbeenc->set_49bit_mode();
 			m_mbeenc->set_gain_adjust(2.5);
@@ -490,12 +494,9 @@ void YSFCodec::start_tx()
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_kal);
 	}
 	else if(m_ttsid == 2){
-		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_rms);
-	}
-	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_awb);
 	}
-	else if(m_ttsid == 4){
+	else if(m_ttsid == 3){
 		tts_audio = flite_text_to_wave(m_ttstext.toStdString().c_str(), voice_slt);
 	}
 #endif
@@ -554,8 +555,6 @@ void YSFCodec::transmit()
 			for(int j = 0; j < 8; ++j){
 				ambe[i] |= (ambe_frame[(i*8)+j] << (7-j));
 			}
-		}
-		for(int i = 0; i < 7; ++i){
 			m_ambeq.append(ambe[i]);
 		}
 	}
@@ -996,6 +995,7 @@ void YSFCodec::process_rx_data()
 
 		if(m_ambedev->get_audio(audio)){
 			m_audio->write(audio, 160);
+			emit update_output_level(m_audio->level());
 		}
 	}
 	else{
@@ -1003,6 +1003,7 @@ void YSFCodec::process_rx_data()
 		audioSamples = m_mbedec->getAudio(nbAudioSamples);
 		m_audio->write(audioSamples, nbAudioSamples);
 		m_mbedec->resetAudio();
+		emit update_output_level(m_audio->level());
 	}
 }
 
